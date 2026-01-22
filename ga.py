@@ -216,3 +216,53 @@ if __name__ == "__main__":
     plt.grid(True)
 
     plt.show()
+
+    # Hyperparameter tuning part, added different parameters to test.
+    print("--- Hyperparameter Tuning ---")
+    
+    w_vec = np.linspace(0, np.pi, 256)
+    h_ideal = np.where(w_vec < 0.4 * np.pi, 1.0, 0.0)
+    spec = {'w': w_vec, 'h_ideal': h_ideal}
+
+    param_grid = {
+        'pop_size': [25, 50, 100],
+        'p_cross': [0.8, 0.9, 0.92],
+        'p_mut': [0.1, 0.2, 0.25, 0.3],  
+        'max_gen': [200]      # Lower gen count for speed during tuning
+    }
+
+    results = []
+
+    total_runs = len(param_grid['pop_size']) * len(param_grid['p_cross']) * len(param_grid['p_mut'])
+    current_run = 0
+
+    for pop in param_grid['pop_size']:
+        for pc in param_grid['p_cross']:
+            for pm in param_grid['p_mut']:
+                current_run += 1
+                
+                trial_fitnesses = []
+                for trial in range(2):
+                    # Re-initialize GA with current params
+                    ga = FilterPopulacija(
+                        velicinaPop=pop, 
+                        order=2,       
+                        p_cross=pc, 
+                        p_mut=pm, 
+                        max_gen=param_grid['max_gen'][0], 
+                        elite_size=2
+                    )
+                    best_ind, _ = ga.evoluiraj(spec)
+                    trial_fitnesses.append(best_ind.getFitness())
+                
+                avg_fit = np.mean(trial_fitnesses)
+                results.append((pop, pc, pm, avg_fit))
+                print(f"Run {current_run}/{total_runs} | Pop: {pop}, Cross: {pc}, Mut: {pm} -> Avg Fit: {avg_fit:.4f}")
+
+    best_params = max(results, key=lambda x: x[3])
+    print("\n--- Tuning Complete ---")
+    print(f"Best Parameters for current GA:")
+    print(f"Population: {best_params[0]}")
+    print(f"Crossover:  {best_params[1]}")
+    print(f"Mutation:   {best_params[2]}")
+    print(f"Best Fitness achieved: {best_params[3]:.4f}")
