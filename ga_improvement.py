@@ -300,7 +300,7 @@ if __name__ == "__main__":
         velicinaPop=100, 
         num_fos=0, 
         num_sos=2, 
-        p_cross=0.9, 
+        p_cross=0.8, 
         p_mut=0.2, 
         max_gen=1000, 
         elite_size=2
