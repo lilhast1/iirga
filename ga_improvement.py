@@ -207,6 +207,73 @@ class FilterPopulacija:
 
 # --- PLOTTING FUNCTION ---
 
+# def plot_results(best_ind, target_spec):
+#     # Decode to SOS
+#     sos = best_ind.get_sos_matrix()
+    
+#     # Calculate Frequency Response
+#     w, h_unscaled = signal.sosfreqz(sos, worN=target_spec['w'])
+#     mag_unscaled = np.abs(h_unscaled)
+    
+#     # Recalculate K for plotting (same logic as evaluiraj)
+#     dc_mag = mag_unscaled[0]
+#     K = 1.0 if dc_mag < 1e-9 else 1.0 / dc_mag
+    
+#     mag = mag_unscaled * K
+#     gain_db = 20 * np.log10(np.maximum(mag, 1e-5))
+    
+#     # Ideal lines for plotting
+#     # We construct a visual "ideal" line based on the spec
+#     h_visual = np.zeros_like(w)
+#     h_visual[target_spec['pass_mask']] = 1.0
+#     # Stop band is 0.0, so it stays 0
+    
+#     plt.figure(figsize=(15, 5))
+
+#     # Plot 1: Magnitude Response
+#     plt.subplot(1, 3, 1)
+    
+
+#     plt.plot(target_spec['w'] / np.pi, h_visual, 'r--', label='Ideal Target', alpha=0.5)
+#     plt.plot(w / np.pi, mag, 'b-', label='GA Result')
+    
+#     # Draw Tolerance Bounds
+#     plt.axhline(1.0 - target_spec['delta1'], color='g', linestyle=':', label='Pass Tol')
+#     plt.axhline(target_spec['delta2'], color='g', linestyle=':', label='Stop Tol')
+    
+#     plt.title("Magnitude Response")
+#     plt.xlabel("Frequency (xπ rad/sample)")
+#     plt.ylabel("Magnitude")
+#     plt.grid(True)
+#     plt.legend()
+
+#     plt.subplot(1, 3, 2)
+#     plt.plot(w / np.pi, gain_db, 'b-', label='GA Result')
+#     stop_db = 20 * np.log10(target_spec['delta2'])
+#     plt.axhline(stop_db, color='r', linestyle='--', label=f'Stop Limit ({stop_db:.1f}dB)')
+    
+#     plt.title("Gain Plot (dB)")
+#     plt.xlabel("Frequency (xπ rad/sample)")
+#     plt.ylabel("Gain [dB]")
+#     plt.ylim([-80, 5])
+#     plt.grid(True)
+#     plt.legend()
+
+#     plt.subplot(1, 3, 3)
+    
+#     z, p, k = signal.sos2zpk(sos) 
+#     uc = np.linspace(0, 2*np.pi, 100)
+#     plt.plot(np.cos(uc), np.sin(uc), 'k--', alpha=0.3)
+#     plt.scatter(np.real(z), np.imag(z), marker='o', edgecolors='b', facecolors='none', label='Zeros')
+#     plt.scatter(np.real(p), np.imag(p), marker='x', color='r', label='Poles')
+#     plt.title("Stability (Poles & Zeros)")
+#     plt.axis('equal')
+#     plt.grid(True)
+#     plt.legend()
+
+#     plt.tight_layout()
+#     plt.show()
+
 def plot_results(best_ind, target_spec):
     # Decode to SOS
     sos = best_ind.get_sos_matrix()
@@ -215,43 +282,43 @@ def plot_results(best_ind, target_spec):
     w, h_unscaled = signal.sosfreqz(sos, worN=target_spec['w'])
     mag_unscaled = np.abs(h_unscaled)
     
-    # Recalculate K for plotting (same logic as evaluiraj)
+    # Recalculate K for normalization
     dc_mag = mag_unscaled[0]
     K = 1.0 if dc_mag < 1e-9 else 1.0 / dc_mag
     
     mag = mag_unscaled * K
     gain_db = 20 * np.log10(np.maximum(mag, 1e-5))
     
-    # Ideal lines for plotting
-    # We construct a visual "ideal" line based on the spec
+    # 1. Prepare Step Response
+    # We create a unit step input: [1, 1, 1, ..., 1]
+    N = 100 
+    step_input = np.ones(N)
+    # Filter the step input using SOS
+    y_step = signal.sosfilt(sos, step_input)
+    y_step_scaled = y_step * K # Apply the same scaling factor K
+
+    # Plotting
+    plt.figure(figsize=(12, 10))
+
+    # Subplot 1: Magnitude Response
+    plt.subplot(2, 2, 1)
     h_visual = np.zeros_like(w)
     h_visual[target_spec['pass_mask']] = 1.0
-    # Stop band is 0.0, so it stays 0
-    
-    plt.figure(figsize=(15, 5))
-
-    # Plot 1: Magnitude Response
-    plt.subplot(1, 3, 1)
-    
-
     plt.plot(target_spec['w'] / np.pi, h_visual, 'r--', label='Ideal Target', alpha=0.5)
     plt.plot(w / np.pi, mag, 'b-', label='GA Result')
-    
-    # Draw Tolerance Bounds
     plt.axhline(1.0 - target_spec['delta1'], color='g', linestyle=':', label='Pass Tol')
     plt.axhline(target_spec['delta2'], color='g', linestyle=':', label='Stop Tol')
-    
     plt.title("Magnitude Response")
     plt.xlabel("Frequency (xπ rad/sample)")
     plt.ylabel("Magnitude")
     plt.grid(True)
     plt.legend()
 
-    plt.subplot(1, 3, 2)
+    # Subplot 2: Gain Plot (dB)
+    plt.subplot(2, 2, 2)
     plt.plot(w / np.pi, gain_db, 'b-', label='GA Result')
     stop_db = 20 * np.log10(target_spec['delta2'])
     plt.axhline(stop_db, color='r', linestyle='--', label=f'Stop Limit ({stop_db:.1f}dB)')
-    
     plt.title("Gain Plot (dB)")
     plt.xlabel("Frequency (xπ rad/sample)")
     plt.ylabel("Gain [dB]")
@@ -259,8 +326,8 @@ def plot_results(best_ind, target_spec):
     plt.grid(True)
     plt.legend()
 
-    plt.subplot(1, 3, 3)
-    
+    # Subplot 3: Stability (Poles & Zeros)
+    plt.subplot(2, 2, 3)
     z, p, k = signal.sos2zpk(sos) 
     uc = np.linspace(0, 2*np.pi, 100)
     plt.plot(np.cos(uc), np.sin(uc), 'k--', alpha=0.3)
@@ -268,6 +335,16 @@ def plot_results(best_ind, target_spec):
     plt.scatter(np.real(p), np.imag(p), marker='x', color='r', label='Poles')
     plt.title("Stability (Poles & Zeros)")
     plt.axis('equal')
+    plt.grid(True)
+    plt.legend()
+
+    # Subplot 4: Step Response (The corrected part)
+    plt.subplot(2, 2, 4)
+    plt.stem(np.arange(N), y_step_scaled, basefmt=" ", linefmt='b-', markerfmt='bo')
+    plt.axhline(1.0, color='r', linestyle='--', alpha=0.5, label='Target Final Value')
+    plt.title("Step Response")
+    plt.xlabel("Samples (n)")
+    plt.ylabel("Amplitude")
     plt.grid(True)
     plt.legend()
 
