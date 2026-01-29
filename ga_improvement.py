@@ -4,11 +4,26 @@ from scipy import signal
 import matplotlib.pyplot as plt
 
 def get_random_stable_fos():
+    """Generates random coefficients for a stable First-Order Section (FOS).
+    
+    Returns:
+        tuple: (b1, a1) where b1 is a feedforward coefficient and a1 is a 
+               feedback coefficient within the unit circle (-1, 1).
+    """
     b1 = np.random.uniform(-2, 2)
     a1 = np.random.uniform(-0.99, 0.99) 
     return b1, a1
 
 def get_random_stable_sos():
+    """Generates random coefficients for a stable Second-Order Section (SOS).
+    
+    Uses the "Stability Triangle" constraints to ensure poles remain 
+    within the unit circle.
+    
+    Returns:
+        tuple: (b1, b2, a1, a2) where coefficients satisfy |a2| < 1 and 
+               |a1| < 1 + a2.
+    """
     b1 = np.random.uniform(-2, 2)
     b2 = np.random.uniform(-2, 2)
     while True:
@@ -18,9 +33,26 @@ def get_random_stable_sos():
             return b1, b2, a1, a2
 
 def clamp_fos(a1):
+    """Clamps the FOS feedback coefficient to ensure stability.
+    
+    Args:
+        a1 (float): The feedback coefficient.
+        
+    Returns:
+        float: Clamped coefficient within [-0.99, 0.99].
+    """
     return np.clip(a1, -0.99, 0.99)
 
 def clamp_sos(a1, a2):
+    """Clamps SOS feedback coefficients to the stability triangle.
+    
+    Args:
+        a1 (float): First feedback coefficient.
+        a2 (float): Second feedback coefficient.
+        
+    Returns:
+        tuple: (clamped_a1, clamped_a2) satisfying stability conditions.
+    """
     a2 = np.clip(a2, -0.99, 0.99)
     limit = a2 + 0.99 
     a1 = np.clip(a1, -limit, limit)
@@ -28,18 +60,33 @@ def clamp_sos(a1, a2):
 
 
 class ApstraktnaIndividua:
+    """Base class for a Genetic Algorithm individual.
+    
+    Attributes:
+        duzinaHromozoma (int): Number of genes in the chromosome.
+        hromozom (np.ndarray): Array representing encoded parameters.
+        fitness (float): Calculated fitness score.
+    """
     def __init__(self, duzinaHromozoma):
         self.duzinaHromozoma = duzinaHromozoma
         self.hromozom = np.zeros(duzinaHromozoma) 
         self.fitness = 0.0
 
     def getFitness(self):
+        """Returns the individual's fitness score."""
         return self.fitness
 
     def setFitness(self, fitness):
+        """Sets the individual's fitness score."""
         self.fitness = fitness
 
 class IIRFilterIndividua(ApstraktnaIndividua):
+    """Represents an IIR filter as a GA individual using SOS structure.
+    
+    Attributes:
+        num_fos (int): Number of First-Order Sections.
+        num_sos (int): Number of Second-Order Sections.
+    """
     def __init__(self, num_fos, num_sos):
         self.num_fos = num_fos
         self.num_sos = num_sos
@@ -47,6 +94,7 @@ class IIRFilterIndividua(ApstraktnaIndividua):
         super().__init__(length)
 
     def initialize_stable(self):
+        """Initializes the chromosome with stable filter coefficients."""
         genes = []
         for _ in range(self.num_fos):
             genes.extend(get_random_stable_fos())
@@ -55,6 +103,11 @@ class IIRFilterIndividua(ApstraktnaIndividua):
         self.hromozom = np.array(genes)
 
     def get_sos_matrix(self):
+        """Converts the chromosome into a SciPy-compatible SOS matrix.
+        
+        Returns:
+            np.ndarray: SOS matrix with shape (n_sections, 6).
+        """
         sos = []
         idx = 0
         for _ in range(self.num_fos):
@@ -72,8 +125,17 @@ class IIRFilterIndividua(ApstraktnaIndividua):
         return np.array(sos)
 
     def evaluiraj(self, target_spec):
-        """
-        [cite_start]Fitness calculation using tolerance masks [cite: 77-78].
+        """Calculates fitness based on tolerance masks.
+        
+        Calculates the Sum of Squared Errors (SSE) for points that violate the 
+        pass-band or stop-band masks. Normalizes gain at DC to 1.0.
+        
+        Args:
+            target_spec (dict): Specifications containing 'w', 'pass_mask', 
+                                'stop_mask', 'delta1', and 'delta2'.
+                                
+        Returns:
+            float: Fitness score (higher is better).
         """
         sos = self.get_sos_matrix()
         w, h_unscaled = signal.sosfreqz(sos, worN=target_spec['w'])
@@ -106,6 +168,15 @@ class IIRFilterIndividua(ApstraktnaIndividua):
         return self.fitness
 
 class FilterPopulacija:
+    """Manages a population of IIR filter individuals for evolution.
+    
+    Attributes:
+        velicinaPop (int): Total population size.
+        p_cross (float): Crossover probability.
+        p_mut (float): Initial mutation probability.
+        max_gen (int): Maximum number of generations.
+        elite_size (int): Number of top individuals carried over unchanged.
+    """
     def __init__(self, velicinaPop, num_fos, num_sos, p_cross, p_mut, max_gen, elite_size):
         self.velicinaPop = velicinaPop
         self.num_fos = num_fos
@@ -125,6 +196,11 @@ class FilterPopulacija:
         self.best_fit = -1.0
 
     def selekcijaRTocak(self):
+        """Performs Roulette Wheel selection using softmax-scaled fitness.
+        
+        Returns:
+            IIRFilterIndividua: The selected individual.
+        """
         fits = np.array([ind.getFitness() for ind in self.populacija])
         if np.all(fits == fits[0]):
              probs = np.ones(len(fits)) / len(fits)
@@ -134,6 +210,17 @@ class FilterPopulacija:
         return self.populacija[idx]
 
     def crossover(self, parent_x, parent_y):
+        """Weighted average crossover between two parents.
+        
+        The weight 'u' is determined by the relative fitness of the parents.
+        
+        Args:
+            parent_x (IIRFilterIndividua): First parent.
+            parent_y (IIRFilterIndividua): Second parent.
+            
+        Returns:
+            tuple: (child1_chromosome, child2_chromosome).
+        """
         if np.random.rand() > self.p_cross:
             return parent_x.hromozom.copy(), parent_y.hromozom.copy()
 
@@ -146,6 +233,17 @@ class FilterPopulacija:
         return child1_h, child2_h
 
     def mutacija(self, hromozom):
+        """Mutates a chromosome and ensures offspring stability.
+        
+        Applies Gaussian noise to coefficients and uses clamping to maintain 
+        stability triangle constraints for feedback coefficients.
+        
+        Args:
+            hromozom (np.ndarray): The chromosome to mutate.
+            
+        Returns:
+            np.ndarray: The mutated, stable chromosome.
+        """
         mutated = hromozom.copy()
         idx = 0
         for _ in range(self.num_fos):
@@ -166,6 +264,17 @@ class FilterPopulacija:
         return mutated
 
     def evoluiraj(self, target_spec):
+        """Runs the genetic algorithm optimization loop.
+        
+        Includes elitism, selection, crossover, mutation, and dynamic 
+        mutation rate adjustment (simulated annealing-style decay).
+        
+        Args:
+            target_spec (dict): Target filter design specifications.
+            
+        Returns:
+            tuple: (best_individual, fitness_history).
+        """
         fit_hist = []
         for gen in range(1, 1 + self.max_gen):
             for ind in self.populacija:
@@ -207,74 +316,17 @@ class FilterPopulacija:
 
 # --- PLOTTING FUNCTION ---
 
-# def plot_results(best_ind, target_spec):
-#     # Decode to SOS
-#     sos = best_ind.get_sos_matrix()
-    
-#     # Calculate Frequency Response
-#     w, h_unscaled = signal.sosfreqz(sos, worN=target_spec['w'])
-#     mag_unscaled = np.abs(h_unscaled)
-    
-#     # Recalculate K for plotting (same logic as evaluiraj)
-#     dc_mag = mag_unscaled[0]
-#     K = 1.0 if dc_mag < 1e-9 else 1.0 / dc_mag
-    
-#     mag = mag_unscaled * K
-#     gain_db = 20 * np.log10(np.maximum(mag, 1e-5))
-    
-#     # Ideal lines for plotting
-#     # We construct a visual "ideal" line based on the spec
-#     h_visual = np.zeros_like(w)
-#     h_visual[target_spec['pass_mask']] = 1.0
-#     # Stop band is 0.0, so it stays 0
-    
-#     plt.figure(figsize=(15, 5))
-
-#     # Plot 1: Magnitude Response
-#     plt.subplot(1, 3, 1)
-    
-
-#     plt.plot(target_spec['w'] / np.pi, h_visual, 'r--', label='Ideal Target', alpha=0.5)
-#     plt.plot(w / np.pi, mag, 'b-', label='GA Result')
-    
-#     # Draw Tolerance Bounds
-#     plt.axhline(1.0 - target_spec['delta1'], color='g', linestyle=':', label='Pass Tol')
-#     plt.axhline(target_spec['delta2'], color='g', linestyle=':', label='Stop Tol')
-    
-#     plt.title("Magnitude Response")
-#     plt.xlabel("Frequency (xπ rad/sample)")
-#     plt.ylabel("Magnitude")
-#     plt.grid(True)
-#     plt.legend()
-
-#     plt.subplot(1, 3, 2)
-#     plt.plot(w / np.pi, gain_db, 'b-', label='GA Result')
-#     stop_db = 20 * np.log10(target_spec['delta2'])
-#     plt.axhline(stop_db, color='r', linestyle='--', label=f'Stop Limit ({stop_db:.1f}dB)')
-    
-#     plt.title("Gain Plot (dB)")
-#     plt.xlabel("Frequency (xπ rad/sample)")
-#     plt.ylabel("Gain [dB]")
-#     plt.ylim([-80, 5])
-#     plt.grid(True)
-#     plt.legend()
-
-#     plt.subplot(1, 3, 3)
-    
-#     z, p, k = signal.sos2zpk(sos) 
-#     uc = np.linspace(0, 2*np.pi, 100)
-#     plt.plot(np.cos(uc), np.sin(uc), 'k--', alpha=0.3)
-#     plt.scatter(np.real(z), np.imag(z), marker='o', edgecolors='b', facecolors='none', label='Zeros')
-#     plt.scatter(np.real(p), np.imag(p), marker='x', color='r', label='Poles')
-#     plt.title("Stability (Poles & Zeros)")
-#     plt.axis('equal')
-#     plt.grid(True)
-#     plt.legend()
-
-#     plt.tight_layout()
-#     plt.show()
 
 def plot_results(best_ind, target_spec):
+    """Visualizes the optimized filter's performance.
+    
+    Generates four plots: Magnitude response with tolerance bounds, 
+    Gain plot in dB, Pole-Zero stability plot, and Step response.
+    
+    Args:
+        best_ind (IIRFilterIndividua): The best individual found by the GA.
+        target_spec (dict): Specifications used for evaluation.
+    """
     # Decode to SOS
     sos = best_ind.get_sos_matrix()
     
@@ -377,10 +429,10 @@ if __name__ == "__main__":
         velicinaPop=100, 
         num_fos=0, 
         num_sos=2, 
-        p_cross=0.8, 
+        p_cross=0.9, 
         p_mut=0.2, 
         max_gen=1000, 
-        elite_size=2
+        elite_size=10
     )
 
     best_individua, fit_hist = ga.evoluiraj(spec)
